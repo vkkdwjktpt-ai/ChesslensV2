@@ -14,9 +14,9 @@ On iPhone, open the HTTPS site in Safari, allow camera access, then use Share �
 
 1. Start the camera and frame the complete chessboard on the other screen.
 2. Select **White** or **Black** for the side you are playing.
-3. ChessLens tracks legal moves and shows one recommendation only when it is your turn. It waits while the opponent is to move.
+3. ChessLens tracks legal moves and shows one recommendation only when it is your turn. While the engine refines its result, it displays the current best move. It waits while the opponent is to move and shows “Reading the board…” when a changed position is still being matched.
 
-For the most reliable turn tracking, start with the game at its initial position. If you open the camera during a game, ChessLens estimates whose turn it is from the selected color until it sees the next moves.
+The camera scan loop runs at up to about 30 frames per second, while board detection runs in a separate worker. For the most reliable turn tracking, start with the game at its initial position. If you open the camera during a game, ChessLens estimates whose turn it is from the selected color until it sees the next moves.
 
 ## Files and licensing
 
