@@ -128,8 +128,8 @@ function renderAll() {
   $('who').textContent = who; $('hudWho').textContent = who;
   let html = '';
   if (noMove) html = '<div class="mv m0">No legal move</div>';
-  else if (thinking) html = '<div class="mv m0"><span class="dot" style="background:#888"></span>…</div>';
   else if (moves.length) moves.forEach((m, i) => { html += `<div class="mv m${i}"><span class="dot" style="background:${rgba(i, 1)}"></span>${fmtMove(m.mv)}<small>${m.text}</small></div>`; });
+  else if (thinking) html = '<div class="mv m0"><span class="dot" style="background:#888"></span>Analyzing…</div>';
   else if (tracker.chess && !mine) html = '<div class="mv" style="color:#9aa3a0;font-size:18px">Waiting for your opponent…</div>';
   $('moves').innerHTML = html; $('hudMoves').innerHTML = html;
   const ev = evalView(); $('fill').style.width = ev.pct + '%'; $('hudFill').style.width = ev.pct + '%'; $('evalTxt').textContent = ev.txt; $('hudEval').textContent = ev.txt;
@@ -158,6 +158,9 @@ function startEngine() {
       if (sc && pv && (!activeSearch.lines[mp] || dp >= activeSearch.lines[mp].depth)) {
         const s = fmtScore(sc[1], +sc[2], activeSearch.fen.split(' ')[1] === 'w');
         activeSearch.lines[mp] = { mv: pv[1], depth: dp, s, text: scoreText(s) };
+        if (mp === 1 && tracker.chess && tracker.fen === activeSearch.fen && tracker.turn === playerColor) {
+          moves = [{ mv: pv[1], text: scoreText(s) }]; evalW = s; renderAll(); draw();
+        }
       }
     } else if (l.startsWith('bestmove')) {
       const done = activeSearch;
@@ -189,7 +192,7 @@ function startQueuedSearch() {
   queuedSearch = null;
   activeSearch = { ...req, lines: {} };
   worker.postMessage('position fen ' + req.fen);
-  worker.postMessage('go depth 18 movetime 1200');
+  worker.postMessage('go depth 18 movetime 800');
 }
 function stopAnalysis(clear = true) {
   queuedSearch = null;
@@ -203,6 +206,7 @@ function maybeAnalyse() {
   if ((activeSearch && activeSearch.key === key) || (queuedSearch && queuedSearch.key === key) || completedKey === key) return;
   moves = []; evalW = null; noMove = false; thinking = true;
   queuedSearch = { fen, key };
+  setStatus('Analyzing…');
   if (activeSearch && !activeSearch.stopping) { activeSearch.stopping = true; worker.postMessage('stop'); }
   else startQueuedSearch();
   renderAll(); draw();
@@ -241,7 +245,7 @@ function onEvent(ev) {
   if (ev.type === 'init' || ev.type === 'move' || ev.type === 'resync') { unmatchedMs = 0; setStatus(tracker.guessed ? 'Turn estimated from the selected color.' : ''); maybeAnalyse(); renderAll(); }
   else if (ev.type === 'unmatched') {
     unmatchedMs = ev.ms;
-    if (ev.ms > 2500) setStatus('Waiting for the board to settle on a legal position…');
+    if (ev.ms > 350) setStatus('Reading the board…');
   } else if (ev.type === 'same') { if (unmatchedMs) { unmatchedMs = 0; setStatus(''); } }
 }
 function step(now) {
@@ -249,7 +253,7 @@ function step(now) {
   if (frameWidth !== fw || frameHeight !== fh) { cap.width = fw; cap.height = fh; frameWidth = fw; frameHeight = fh; }
   cctx.drawImage(video, 0, 0, fw, fh);
   const d = cctx.getImageData(0, 0, fw, fh).data;
-  if ((!found && now - lastDet > 500) || (found && now - lastDet > 4000)) requestDetect(now);
+  if ((!found && now - lastDet > 350) || (found && now - lastDet > 1400)) requestDetect(now);
   if (!found) return;
   const res = reader.update(d, fw, fh, quad), names = res.names;
   const wb = inferWhiteBottom(names);
@@ -267,7 +271,7 @@ function loop() {
   if (!running) return;
   const t0 = performance.now();
   try { step(t0); } catch (e) { setStatus('Error: ' + e.message); }
-  setTimeout(loop, Math.max(4, 55 - (performance.now() - t0)));
+  setTimeout(loop, Math.max(4, 33 - (performance.now() - t0)));
 }
 
 /* ---------- overlay drawing ---------- */
@@ -283,7 +287,7 @@ function draw() {
   if (!found) return;
   const P = quad.map(([x, y]) => [x * w, y * h]), H = Lens.homography(Lens.BOARD, P);
   g.strokeStyle = 'rgba(127,176,105,.72)'; g.lineWidth = 2 * dpr; g.beginPath(); P.forEach((p, i) => i ? g.lineTo(...p) : g.moveTo(...p)); g.closePath(); g.stroke();
-  if (tracker.chess && tracker.turn === playerColor && !thinking && moves.length) {
+  if (tracker.chess && tracker.turn === playerColor && moves.length) {
     const rc = sq => { let r = 8 - +sq[1], c = 'abcdefgh'.indexOf(sq[0]); if (!whiteBottom) { r = 7 - r; c = 7 - c; } return [r, c]; };
     const centre = sq => { const [r, c] = rc(sq); return Lens.warp(H, c + .5, r + .5); };
         for (let i = moves.length - 1; i >= 0; i--) {
