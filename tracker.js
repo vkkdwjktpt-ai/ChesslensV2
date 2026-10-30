@@ -75,7 +75,7 @@
       }
       if (!this.pend || this.pend.k !== obs) this.pend = { k: obs, since: now };
       const ms = now - this.pend.since;
-      if (ms > 2400) {                                  // wait out screen animations and transient recognition errors before re-syncing
+      if (ms > 900) {                                   // camera labels are already stabilized; recover promptly from a missed move
         const mc = moverColor(this.placement, obs), turn = mc ? (mc === 'w' ? 'b' : 'w') : this.chess.turn();
         if (this.load(obs, turn)) { this.guessed = !mc; return { type: 'resync' }; }
         this.pend = null; return { type: 'invalid' };
