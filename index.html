@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ChessLens">
+<meta name="theme-color" content="#111111">
+<title>ChessLens</title>
+<style>
+  :root { --bg:#121212; --fg:#f3f3f3; --mut:#9aa3a0; --acc:#7fb069; --card:#1d1f1e; --line:#3a3f3d; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f4f5f3; --fg:#161816; --mut:#5d6663; --card:#fff; --line:#cfd5d2; } }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); font:16px -apple-system,system-ui,"Segoe UI",sans-serif; }
+  body { padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  #stage { display:none; position:relative; background:#000; }
+  #stage.on { display:block; }
+  #box { position:relative; margin:0 auto; }
+  #box video, #box canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #ov { touch-action:none; }
+  #stage.fs { display:flex; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; width:100vw; height:100dvh; }
+  #fsbar, #hud { display:none; }
+  #stage.fs #fsbar { display:flex; position:absolute; z-index:3; top:calc(env(safe-area-inset-top) + 8px); left:8px; right:8px; }
+  #stage.fs #hud { display:block; position:absolute; z-index:3; left:8px; right:8px; bottom:calc(env(safe-area-inset-bottom) + 10px); background:rgba(0,0,0,.62); color:#fff; border-radius:14px; padding:8px 12px; }
+  #fsbar button { flex:0 0 auto; padding:9px 14px; font-size:14px; background:rgba(0,0,0,.62); color:#fff; border-color:rgba(255,255,255,.3); }
+  #hud .mv { font-size:18px; padding:2px 0; } #hud .mv.m0 { font-size:26px; } #hud small { color:#ccc; }
+  #hudStatus, #hudWho { font-size:12px; color:#ccc; min-height:14px; }
+  #panel { max-width:560px; margin:0 auto; padding:12px 14px 24px; display:grid; gap:10px; }
+  #intro { text-align:center; padding:28px 8px 8px; }
+  #intro h1 { margin:0 0 6px; font-size:26px; }
+  #intro p { color:var(--mut); margin:6px 0; line-height:1.4; }
+  #live { display:none; gap:10px; }
+  #who { color:var(--mut); font-size:14px; min-height:18px; }
+  .mv { display:flex; align-items:center; gap:10px; font-weight:600; font-size:20px; padding:3px 0; }
+  .mv.m0 { font-size:32px; font-weight:700; }
+  .mv small { color:var(--mut); font-weight:400; font-size:14px; margin-left:auto; }
+  .dot { width:12px; height:12px; border-radius:50%; flex:none; }
+  .bar { height:10px; border-radius:6px; background:#3b3b3b; overflow:hidden; }
+  .bar > i { display:block; height:100%; width:50%; background:#00e676; transition:width .25s; }
+  .evt { font-size:14px; color:var(--mut); margin-top:4px; }
+  #status { color:var(--mut); font-size:14px; min-height:18px; }
+  .lbl { color:var(--mut); font-size:13px; margin-top:4px; }
+  .row { display:flex; gap:8px; }
+  button { flex:1; padding:13px 8px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; font-size:15px; }
+  button.on { background:var(--acc); border-color:var(--acc); color:#10130f; font-weight:600; }
+  #start { background:var(--acc); color:#10130f; font-weight:700; font-size:17px; border:0; padding:15px; }
+  #colors { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  #colors button { min-height:58px; font-size:18px; font-weight:650; }
+  #colors button.on { box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--acc); }
+  #moves { min-height:48px; }
+  #moves .mv { justify-content:center; }
+  #status { text-align:center; }
+  .hint { color:var(--mut); font-size:13px; line-height:1.4; }
+  @media (max-width:560px) { #stage:not(.fs) { margin-inline:-14px; } #panel { padding-top:10px; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="box"><video id="video" playsinline muted autoplay></video><canvas id="ov"></canvas></div>
+  <div id="fsbar">
+    <button id="fsExit">✕ Exit</button>
+  </div>
+  <div id="hud"><div id="hudWho"></div><div id="hudMoves"></div><div class="bar"><i id="hudFill"></i></div><div id="hudEval" class="evt"></div><div id="hudStatus"></div></div>
+</div>
+
+<div id="panel">
+  <div id="intro">
+    <h1>ChessLens</h1>
+    <p>Point your camera at a chess game on a screen. ChessLens finds the board and suggests a move for your color.</p>
+    <p>Everything runs on your phone. No video leaves the device.</p>
+  </div>
+  <button id="start">Start camera</button>
+  <div id="live">
+    <div id="who"></div>
+    <div id="moves"></div>
+    <div><div class="bar"><i id="fill"></i></div><div id="evalTxt" class="evt"></div></div>
+    <div id="status"></div>
+
+    <div class="lbl">Which color are you playing?</div>
+    <div id="colors"><button id="playWhite" aria-pressed="true">♔ White</button><button id="playBlack" aria-pressed="false">♚ Black</button></div>
+    <div class="row"><button id="resetBtn">Reset game</button><button id="fsBtn">Full screen</button></div>
+    <div class="hint">The camera stays on your device. Keep the whole on-screen board in view. For the best iPhone experience, add this page to your Home Screen.</div>
+  </div>
+</div>
+
+<script src="chess.js?v=5"></script>
+<script src="lens.js?v=5"></script>
+<script src="reader.js?v=5"></script>
+<script src="tracker.js?v=5"></script>
+<script>
+const $ = id => document.getElementById(id);
+const video = $('video'), ov = $('ov'), stage = $('stage'), box = $('box');
+const cap = document.createElement('canvas'), cctx = cap.getContext('2d', { willReadFrequently: true });
+const dcap = document.createElement('canvas'), dctx = dcap.getContext('2d', { willReadFrequently: true });
+const COLS = [[0, 230, 118], [255, 196, 0], [79, 195, 247]];
+const rgba = (i, a) => `rgba(${COLS[i].join(',')},${a})`;
+const fmtMove = m => m.slice(0, 2) + ' → ' + m.slice(2, 4) + (m[4] ? '=' + m[4].toUpperCase() : '');
+
+let model = null, reader = null, tracker = new TrackerLib.Tracker();
+let worker = null, running = false, detWorker = null, detBusy = false, lastDet = 0, detMiss = 0;
+let playerColor = 'w', fs = false, activeSearch = null, queuedSearch = null, searchSequence = 0, completedKey = null;
+let quad = [[.15,.15],[.85,.15],[.85,.85],[.15,.85]], found = false, whiteBottom = null, orientationCandidate = null, orientationVotes = 0;
+let moves = [], thinking = false, noMove = false, evalW = null, lastSan = '', unmatchedMs = 0;
+let frameWidth = 0, frameHeight = 0;
+try { const q = JSON.parse(localStorage.getItem('chesslens-quad')); if (q && q.length === 4) quad = q; } catch (e) {}
+try { playerColor = localStorage.getItem('chesslens-player-color') === 'b' ? 'b' : 'w'; } catch (e) {}
+const myColor = () => playerColor;
+
+function setStatus(t) {
+  if ($('status').textContent !== t) $('status').textContent = t;
+  if ($('hudStatus').textContent !== t) $('hudStatus').textContent = t;
+}
+
+/* ---------- what is shown ---------- */
+function evalView() {
+  if (!evalW) return { pct: 50, txt: 'Position evaluation appears with your move' };
+  const sign = myColor() === 'w' ? 1 : -1;
+  if (evalW.kind === 'mate') { const mine = evalW.v * sign > 0; return { pct: mine ? 98 : 2, txt: 'Mate in ' + Math.abs(evalW.v) + (mine ? ' for you' : ' for your opponent') }; }
+  const cp = evalW.v * sign, a = Math.abs(cp), pawns = (cp >= 0 ? '+' : '−') + (a / 100).toFixed(1);
+  const word = a < 30 ? 'Equal' : a < 90 ? (cp > 0 ? 'Slightly better' : 'Slightly worse') : a < 250 ? (cp > 0 ? 'You’re better' : 'You’re worse') : (cp > 0 ? 'You’re winning' : 'You’re losing');
+  return { pct: Math.max(3, Math.min(97, 100 / (1 + Math.exp(-cp / 350)))), txt: word + ' (' + pawns + ')' };
+}
+function renderAll() {
+  const mine = tracker.chess && tracker.turn === playerColor;
+  let who = !tracker.chess ? 'Looking for the board…' : (mine ? 'Your move' : 'Waiting for your opponent');
+  if (tracker.chess && lastSan) who += ' · last: ' + lastSan;
+  if (tracker.chess && tracker.guessed) who += ' · turn estimated';
+  $('who').textContent = who; $('hudWho').textContent = who;
+  let html = '';
+  if (noMove) html = '<div class="mv m0">No legal move</div>';
+  else if (thinking) html = '<div class="mv m0"><span class="dot" style="background:#888"></span>…</div>';
+  else if (moves.length) moves.forEach((m, i) => { html += `<div class="mv m${i}"><span class="dot" style="background:${rgba(i, 1)}"></span>${fmtMove(m.mv)}<small>${m.text}</small></div>`; });
+  else if (tracker.chess && !mine) html = '<div class="mv" style="color:#9aa3a0;font-size:18px">Waiting for your opponent…</div>';
+  $('moves').innerHTML = html; $('hudMoves').innerHTML = html;
+  const ev = evalView(); $('fill').style.width = ev.pct + '%'; $('hudFill').style.width = ev.pct + '%'; $('evalTxt').textContent = ev.txt; $('hudEval').textContent = ev.txt;
+}
+function syncUI() {
+  $('playWhite').classList.toggle('on', playerColor === 'w');
+  $('playBlack').classList.toggle('on', playerColor === 'b');
+  $('playWhite').setAttribute('aria-pressed', playerColor === 'w');
+  $('playBlack').setAttribute('aria-pressed', playerColor === 'b');
+  renderAll(); draw();
+}
+
+/* ---------- engine ---------- */
+const fmtScore = (kind, v, white) => ({ kind, v: white ? v : -v });          // engine score is from the mover's side; store from White's side
+const scoreText = e => e.kind === 'mate' ? 'M' + Math.abs(e.v) + (e.v > 0 ? ' W' : ' B') : (e.v >= 0 ? '+' : '') + (e.v / 100).toFixed(2);
+function startEngine() {
+  if (worker) worker.terminate();
+  activeSearch = null;
+  worker = new Worker('stockfish-19-lite-single.js');
+  worker.onmessage = e => {
+    const l = typeof e.data === 'string' ? e.data : '';
+    if (l.startsWith('info') && l.includes(' pv ') && l.includes(' score ')) {
+      if (!activeSearch) return;
+      const mp = +((l.match(/ multipv (\d+)/) || [0, 1])[1]), dp = +((l.match(/ depth (\d+)/) || [0, 0])[1]);
+      const sc = l.match(/score (cp|mate) (-?\d+)/), pv = l.match(/ pv (\S+)/);
+      if (sc && pv && (!activeSearch.lines[mp] || dp >= activeSearch.lines[mp].depth)) {
+        const s = fmtScore(sc[1], +sc[2], activeSearch.fen.split(' ')[1] === 'w');
+        activeSearch.lines[mp] = { mv: pv[1], depth: dp, s, text: scoreText(s) };
+      }
+    } else if (l.startsWith('bestmove')) {
+      const done = activeSearch;
+      activeSearch = null;
+      const bm = l.split(' ')[1];
+      const stillOurTurn = done && tracker.chess && tracker.fen === done.fen && tracker.turn === playerColor;
+      if (stillOurTurn) {
+        thinking = false;
+        if (!bm || bm === '(none)') { noMove = true; moves = []; }
+        else {
+          const best = done.lines[1];
+          moves = [{ mv: bm, text: best && best.mv === bm ? best.text : '' }];
+          if (best) evalW = best.s;
+          completedKey = done.key;
+        }
+        setStatus(''); renderAll(); draw();
+      } else if (!queuedSearch) {
+        thinking = false;
+      }
+      startQueuedSearch();
+    }
+  };
+  worker.onerror = () => { setStatus('Engine restarted'); activeSearch = null; startEngine(); maybeAnalyse(); };
+  worker.postMessage('uci');
+}
+function startQueuedSearch() {
+  if (!worker || activeSearch || !queuedSearch) return;
+  const req = queuedSearch;
+  queuedSearch = null;
+  activeSearch = { ...req, lines: {} };
+  worker.postMessage('position fen ' + req.fen);
+  worker.postMessage('go depth 18 movetime 1200');
+}
+function stopAnalysis(clear = true) {
+  queuedSearch = null;
+  if (activeSearch && !activeSearch.stopping) { activeSearch.stopping = true; if (worker) worker.postMessage('stop'); }
+  thinking = false;
+  if (clear) { moves = []; evalW = null; noMove = false; }
+}
+function maybeAnalyse() {
+  if (!tracker.chess || tracker.turn !== playerColor) { stopAnalysis(); renderAll(); draw(); return; }
+  const fen = tracker.fen, key = fen + '|' + playerColor;
+  if ((activeSearch && activeSearch.key === key) || (queuedSearch && queuedSearch.key === key) || completedKey === key) return;
+  moves = []; evalW = null; noMove = false; thinking = true;
+  queuedSearch = { fen, key };
+  if (activeSearch && !activeSearch.stopping) { activeSearch.stopping = true; worker.postMessage('stop'); }
+  else startQueuedSearch();
+  renderAll(); draw();
+}
+
+/* ---------- finding the board (in a worker, never blocks the camera) ---------- */
+function startDetector() {
+  detWorker = new Worker('detect-worker.js?v=5');
+  detWorker.onmessage = e => {
+    detBusy = false; const q = e.data.quad;
+    if (q) {
+      detMiss = 0;
+      if (!found || moved(quad, q) > 0.012) { quad = q; draw(); }
+      if (!found) { found = true; setStatus(''); }
+    } else if (++detMiss >= 4 && found) { found = false; setStatus('Looking for the board…'); draw(); }
+  };
+}
+const moved = (a, b) => Math.max(...a.map((p, i) => Math.hypot(p[0] - b[i][0], p[1] - b[i][1])));
+function requestDetect(now) {
+  if (detBusy || !detWorker) return;
+  detBusy = true; lastDet = now;
+  const vw = video.videoWidth, vh = video.videoHeight, w = 256, h = Math.round(vh * w / vw);
+  dcap.width = w; dcap.height = h; dctx.drawImage(video, 0, 0, w, h);
+  const img = dctx.getImageData(0, 0, w, h); detWorker.postMessage({ id: now, buf: img.data.buffer, w, h }, [img.data.buffer]);
+}
+
+/* ---------- camera loop ---------- */
+function inferWhiteBottom(names) {         // white pieces in the bottom half / black pieces in the top half => White at bottom
+  let s = 0;
+  names.forEach((row, r) => row.forEach(n => { if (n === 'empty') return; s += ((n[0] === 'w') === (r >= 4)) ? 1 : -1; }));
+  return Math.abs(s) >= 4 ? s > 0 : null;
+}
+function onEvent(ev) {
+  if (ev.type === 'move') { lastSan = ev.moves.map(m => m.san).join(' '); }
+  if (ev.type === 'init' || ev.type === 'resync') lastSan = '';
+  if (ev.type === 'init' || ev.type === 'move' || ev.type === 'resync') { unmatchedMs = 0; setStatus(tracker.guessed ? 'Turn estimated from the selected color.' : ''); maybeAnalyse(); renderAll(); }
+  else if (ev.type === 'unmatched') {
+    unmatchedMs = ev.ms;
+    if (ev.ms > 2500) setStatus('Waiting for the board to settle on a legal position…');
+  } else if (ev.type === 'same') { if (unmatchedMs) { unmatchedMs = 0; setStatus(''); } }
+}
+function step(now) {
+  const vw = video.videoWidth, vh = video.videoHeight, fw = Math.min(560, vw), fh = Math.round(vh * fw / vw);
+  if (frameWidth !== fw || frameHeight !== fh) { cap.width = fw; cap.height = fh; frameWidth = fw; frameHeight = fh; }
+  cctx.drawImage(video, 0, 0, fw, fh);
+  const d = cctx.getImageData(0, 0, fw, fh).data;
+  if ((!found && now - lastDet > 500) || (found && now - lastDet > 4000)) requestDetect(now);
+  if (!found) return;
+  const res = reader.update(d, fw, fh, quad), names = res.names;
+  const wb = inferWhiteBottom(names);
+  if (wb !== null) {
+    if (orientationCandidate === wb) orientationVotes++;
+    else { orientationCandidate = wb; orientationVotes = 1; }
+    if (whiteBottom === null && orientationVotes >= 6) whiteBottom = wb;
+  }
+  if (whiteBottom === null) return;
+  const f = Lens.toFen(names, whiteBottom, true);
+  if (!f) { setStatus('Can’t read a valid position yet.'); return; }
+  onEvent(tracker.observe(f.fen.split(' ')[0], now, playerColor));
+}
+function loop() {
+  if (!running) return;
+  const t0 = performance.now();
+  try { step(t0); } catch (e) { setStatus('Error: ' + e.message); }
+  setTimeout(loop, Math.max(4, 55 - (performance.now() - t0)));
+}
+
+/* ---------- overlay drawing ---------- */
+function sizeStage() {
+  const vw = video.videoWidth || 3, vh = video.videoHeight || 4, asp = vw / vh;
+  const w = Math.min(innerWidth, (fs ? innerHeight : innerHeight * 0.56) * asp);
+  box.style.width = w + 'px'; box.style.height = (w / asp) + 'px';
+  const dpr = devicePixelRatio || 1; ov.width = Math.round(w * dpr); ov.height = Math.round(w / asp * dpr); draw();
+}
+function draw() {
+  const g = ov.getContext('2d'), w = ov.width, h = ov.height, dpr = devicePixelRatio || 1;
+  g.clearRect(0, 0, w, h);
+  if (!found) return;
+  const P = quad.map(([x, y]) => [x * w, y * h]), H = Lens.homography(Lens.BOARD, P);
+  g.strokeStyle = 'rgba(127,176,105,.72)'; g.lineWidth = 2 * dpr; g.beginPath(); P.forEach((p, i) => i ? g.lineTo(...p) : g.moveTo(...p)); g.closePath(); g.stroke();
+  if (tracker.chess && tracker.turn === playerColor && !thinking && moves.length) {
+    const rc = sq => { let r = 8 - +sq[1], c = 'abcdefgh'.indexOf(sq[0]); if (!whiteBottom) { r = 7 - r; c = 7 - c; } return [r, c]; };
+    const centre = sq => { const [r, c] = rc(sq); return Lens.warp(H, c + .5, r + .5); };
+        for (let i = moves.length - 1; i >= 0; i--) {
+      const mv = moves[i].mv, from = mv.slice(0, 2), to = mv.slice(2, 4);
+      {
+        const a = centre(from), b = centre(to), ang = Math.atan2(b[1] - a[1], b[0] - a[0]), hl = (i ? 16 : 21) * dpr;
+        g.strokeStyle = g.fillStyle = rgba(i, i ? .8 : .92); g.lineWidth = (i ? 5 : 8) * dpr; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(...a); g.lineTo(b[0] - Math.cos(ang) * hl * .6, b[1] - Math.sin(ang) * hl * .6); g.stroke();
+        g.beginPath(); g.moveTo(...b); g.lineTo(b[0] - hl * Math.cos(ang - .45), b[1] - hl * Math.sin(ang - .45)); g.lineTo(b[0] - hl * Math.cos(ang + .45), b[1] - hl * Math.sin(ang + .45)); g.closePath(); g.fill();
+      }
+    }
+  }
+}
+
+/* ---------- controls ---------- */
+function setPlayerColor(color) {
+  if (playerColor === color) return;
+  playerColor = color;
+  try { localStorage.setItem('chesslens-player-color', color); } catch (e) {}
+  completedKey = null;
+  maybeAnalyse(); syncUI();
+}
+$('playWhite').onclick = () => setPlayerColor('w');
+$('playBlack').onclick = () => setPlayerColor('b');
+$('resetBtn').onclick = () => {
+  tracker.reset(); if (reader) reader.reset(); lastSan = ''; moves = []; evalW = null; completedKey = null;
+  whiteBottom = null; orientationCandidate = null; orientationVotes = 0;
+  stopAnalysis(); setStatus(''); syncUI();
+};
+function enterFs() {
+  fs = true; stage.classList.add('fs'); document.body.style.overflow = 'hidden'; scrollTo(0, 0);
+  try { const el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen; if (f) { const p = f.call(el); if (p && p.catch) p.catch(() => {}); } } catch (e) {}
+  sizeStage();
+}
+function leaveFs() { fs = false; stage.classList.remove('fs'); document.body.style.overflow = ''; try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} sizeStage(); }
+$('fsBtn').onclick = enterFs; $('fsExit').onclick = leaveFs;
+document.addEventListener('fullscreenchange', () => { if (fs && !document.fullscreenElement) leaveFs(); });
+
+/* ---------- start ---------- */
+async function loadModel() {
+  const meta = await (await fetch('model.json?v=5')).json();
+  const buf = await (await fetch('weights.bin?v=5')).arrayBuffer();
+  model = Lens.makeModel(meta, new Float32Array(buf)); reader = new Readers.Reader(model);
+}
+$('start').onclick = async () => {
+  const btn = $('start'); btn.disabled = true; btn.textContent = 'Starting…';
+  try {
+    await loadModel();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    video.srcObject = stream; await video.play();
+    await new Promise(r => video.videoWidth ? r() : video.addEventListener('loadedmetadata', r, { once: true }));
+    $('intro').style.display = 'none'; btn.style.display = 'none'; stage.classList.add('on'); $('live').style.display = 'grid';
+    sizeStage(); syncUI(); startEngine(); startDetector(); setStatus('Looking for the board…'); running = true; loop();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Start camera';
+    alert('Could not start: ' + (e && e.message ? e.message : e) + '\n\nOn iPhone, open this page in Safari and allow camera access when asked.');
+  }
+};
+addEventListener('resize', sizeStage);
+addEventListener('orientationchange', () => setTimeout(sizeStage, 300));
+</script>
+</body>
+</html>
